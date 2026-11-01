@@ -2073,7 +2073,7 @@
   
 <script id="lumiar-failsafe">
 (function () {
-  var TRIES = 0, MAX = 70; // 70 x 100ms = 7s (deixa o motor terminar sozinho)
+  var TRIES = 0, MAX = 70, done = false; // 70 x 100ms = 7s (deixa o motor terminar sozinho)
   function heroHidden() {
     var h = document.querySelector(".nothin-hero-svg");
     if (!h) return false;
@@ -2081,36 +2081,49 @@
     return c.visibility === "hidden" || c.opacity === "0" || h.closest(".section") === null;
   }
   function reveal() {
+    if (done) return; done = true;
     try {
+      // NUNCA mexer em [line]/[letter]/transform: propriedade do motor GSAP/fluid.
       var l = document.querySelector(".loader");
       if (l) { l.style.setProperty("display", "none", "important"); }
-      document.querySelectorAll("[line],[letter],[opacity],[scale]").forEach(function (e) {
-        e.style.setProperty("opacity", "1", "important");
-        e.style.setProperty("transform", "none", "important");
-        e.style.setProperty("visibility", "visible", "important");
-      });
-      document.querySelectorAll(".nothin-hero-svg, .footer-nothin-svg, .nav-logo").forEach(function (e) {
-        e.style.setProperty("visibility", "visible", "important");
-        e.style.setProperty("opacity", "1", "important");
-      });
-      document.documentElement.style.setProperty("overflow", "auto", "important");
-      document.body.style.setProperty("overflow", "auto", "important");
+      // Crítico: religa o Lenis — sem estes eventos o scroll fica travado
+      // (Lenis parado chama preventDefault em todo touchmove).
+      try {
+        window.dispatchEvent(new CustomEvent("loader:hero-reveal-start"));
+        window.dispatchEvent(new CustomEvent("loader:hero-revealed"));
+      } catch (e) {}
+      // SVG só volta se o fluid NÃO estiver no controle (sem canvas).
+      if (!document.querySelector(".mask-reveal-canvas")) {
+        document.querySelectorAll(".nothin-hero-svg, .footer-nothin-svg, .nav-logo").forEach(function (e) {
+          e.style.setProperty("visibility", "visible", "important");
+          e.style.setProperty("opacity", "1", "important");
+        });
+      }
+      // Remove o lock inline do motor sem impor nada por cima.
+      document.documentElement.style.removeProperty("overflow");
+      document.body.style.removeProperty("overflow");
       try { sessionStorage.setItem("nothin:loader-played", "1"); } catch (e) {}
     } catch (e) {}
   }
   function loaderVisible() {
     var l = document.querySelector(".loader");
     if (!l) return false;
-    return getComputedStyle(l).display !== "none" && getComputedStyle(l).opacity !== "0";
+    var s = getComputedStyle(l);
+    return s.display !== "none" && parseFloat(s.opacity) > 0.01 && l.offsetHeight > 0;
   }
   function tick() {
-    if (TRIES >= MAX) { reveal(); return; }          // tempo esgotado: esconde o loader SEMPRE
-    if (loaderVisible()) { TRIES++; setTimeout(tick, 100); return; } // loader preso: conta e continua
-    if (!heroHidden()) return;          // motor já revelou — não interfere
-    TRIES++;
-    if (TRIES >= MAX) reveal();          // motor travado de verdade → força
-    else setTimeout(tick, 100);
+    if (done) return;
+    if (loaderVisible()) {
+      TRIES++;
+      if (TRIES >= MAX) reveal();      // loader preso de verdade → força a saída
+      else setTimeout(tick, 100);
+      return;
+    }
+    // Loader saiu da tela: motor/fluid no controle — vigilância encerrada.
   }
+  // Deadline independente do "load" (vídeos lentos atrasam o evento no celular).
+  setTimeout(function () { if (loaderVisible()) reveal(); }, 12000);
+  setTimeout(tick, 1500);
   window.addEventListener("load", function () { setTimeout(tick, 1200); });
 })();
 </script>
